@@ -24,6 +24,7 @@
 #include <map>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#include <linux/version.h>
 
 std::string getLocalDateTime(void)
 {
@@ -44,7 +45,7 @@ bool operator<(const CountItem a, const CountItem b)
 
 StackCollector::StackCollector()
 {
-    self_pid = getpid();
+    self_tgid = getpid();
 };
 
 std::vector<CountItem> *StackCollector::sortedCountList(void)
@@ -53,25 +54,44 @@ std::vector<CountItem> *StackCollector::sortedCountList(void)
     auto val_size = bpf_map__value_size(psid_count_map);
     auto value_fd = bpf_object__find_map_fd_by_name(obj, "psid_count_map");
 
+    auto D = new std::vector<CountItem>();
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)
+    for (psid prev_key = {0}, curr_key = {0};; prev_key = curr_key)
+    {
+        if (bpf_map_get_next_key(value_fd, &prev_key, &curr_key))
+        {
+            if (errno != ENOENT)
+                perror("map get next key error");
+            break; // no more keys, done
+        }
+        if (showDelta)
+            bpf_map_delete_elem(value_fd, &prev_key);
+        char val[val_size];
+        memset(val, 0, val_size);
+        if (bpf_map_lookup_elem(value_fd, &curr_key, &val))
+        {
+            if (errno != ENOENT)
+            {
+                perror("map lookup error");
+                break;
+            }
+            continue;
+        }
+        CountItem d(curr_key, count_values(val));
+        D->insert(std::lower_bound(D->begin(), D->end(), d), d);
+    }
+#else
     auto keys = new psid[MAX_ENTRIES];
     auto vals = new char[MAX_ENTRIES * val_size];
     uint32_t count = MAX_ENTRIES;
     psid next_key;
     int err;
     if (showDelta)
-    {
         err = bpf_map_lookup_and_delete_batch(value_fd, NULL, &next_key, keys, vals, &count, NULL);
-    }
     else
-    {
         err = bpf_map_lookup_batch(value_fd, NULL, &next_key, keys, vals, &count, NULL);
-    }
     if (err == EFAULT)
-    {
         return NULL;
-    }
-
-    auto D = new std::vector<CountItem>();
     for (uint32_t i = 0; i < count; i++)
     {
         CountItem d(keys[i], count_values(vals + val_size * i));
@@ -79,6 +99,7 @@ std::vector<CountItem> *StackCollector::sortedCountList(void)
     }
     delete[] keys;
     delete[] vals;
+#endif
     return D;
 };
 
@@ -141,6 +162,7 @@ StackCollector::operator std::string()
                         std::stringstream ss("");
                         ss << "+0x" << std::hex << (sym.ip - sym.start);
                         sym.name += ss.str();
+                        clearSpace(sym.name);
                         g_symbol_parser.putin_symbol_cache(id.pid, addr, sym.name);
                     }
                     else
@@ -150,7 +172,6 @@ StackCollector::operator std::string()
                         sym.name = ss.str();
                         g_symbol_parser.putin_symbol_cache(id.pid, addr, sym.name);
                     }
-                    clearSpace(sym.name);
                     sym_trace[i++] = sym.name;
                 }
                 traces[id.usid] = sym_trace;
@@ -171,14 +192,13 @@ StackCollector::operator std::string()
                     {
                         ss << "+0x" << std::hex << (sym.ip - sym.start);
                         sym.name += ss.str();
+                        clearSpace(sym.name);
                     }
                     else
                     {
                         ss << "0x" << std::hex << addr;
                         sym.name = ss.str();
-                        g_symbol_parser.putin_symbol_cache(pid, addr, sym.name);
                     }
-                    clearSpace(sym.name);
                     sym_trace[i++] = sym.name;
                 }
                 traces[id.ksid] = sym_trace;

@@ -19,8 +19,11 @@
 OUTPUT := .output
 BPF_SKEL := bpf_skel
 CLANG ?= clang
-LIBBPF_SRC := $(abspath libbpf-bootstrap/libbpf/src)
-BPFTOOL_SRC := $(abspath libbpf-bootstrap/bpftool/src)
+CXX := clang
+LIB := ../lib
+LIBBPF_ROOT := $(abspath $(LIB)/libbpf)
+LIBBPF_SRC := $(LIBBPF_ROOT)/src
+BPFTOOL_SRC := $(abspath $(LIB)/bpftool/src)
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
@@ -31,11 +34,12 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
 			 | sed 's/mips.*/mips/' \
 			 | sed 's/riscv64/riscv/' \
 			 | sed 's/loongarch64/loongarch/')
-VMLINUX := libbpf-bootstrap/vmlinux/$(ARCH)/vmlinux.h
+
+VMLINUX := $(LIB)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I./include -I./$(OUTPUT) -I./$(BPF_SKEL) -I./libbpf-bootstrap/libbpf/include/uapi -I$(dir $(VMLINUX))
+INCLUDES := -I./include -I./$(OUTPUT) -I./$(BPF_SKEL) -I$(LIBBPF_ROOT)/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -Og -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -85,12 +89,22 @@ clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(TARGETS) $(BPF_SKEL)
 
+init:
+	$(call msg,INIT,$(LIB))
+	$(Q)git submodule update --init --recursive ../lib/
+
+$(LIBBPF_SRC) $(BPFTOOL_SRC): init
+
+$(VMLINUX):
+	$(call msg,BTFDUMP,$@)
+	$(Q)bpftool btf dump file /sys/kernel/btf/vmlinux format c > $@
+
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT) $(BPF_SKEL):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
 
 # Build libbpf
-$(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
+$(LIBBPF_OBJ): $(LIBBPF_SRC) $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
 	$(call msg,LIB,$@)
 	$(Q)$(MAKE) -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1  \
 		    OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@) \
@@ -98,7 +112,7 @@ $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPU
 		    install
 
 # Build bpftool
-$(BPFTOOL): | $(BPFTOOL_OUTPUT)
+$(BPFTOOL): $(BPFTOOL_SRC) | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 

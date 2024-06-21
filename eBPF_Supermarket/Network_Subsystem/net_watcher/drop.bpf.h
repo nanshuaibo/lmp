@@ -13,6 +13,7 @@
 // limitations under the License.
 //
 // author: blown.away@qq.com
+// netwatcher libbpf 丢包
 
 #include "common.bpf.h"
 static __always_inline
@@ -41,5 +42,7 @@ int __tp_kfree(struct trace_event_raw_kfree_skb *ctx)
     message->location = (long)ctx->location;
     message->drop_reason = ctx->reason;
     bpf_ringbuf_submit(message,0);
+    if(stack_info)
+        getstack(ctx);
     return 0;
-}
+} 
