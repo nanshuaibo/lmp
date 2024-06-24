@@ -87,11 +87,13 @@ $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 
 vmlinux: $(BPFTOOL)
 	$(call msg,GEN-VMLINUX_H,$@)
-	 $(Q)$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > ./include/vmlinux.h
+	 $(Q)$(BPFTOOL)  btf dump file /sys/kernel/btf/vmlinux format c > ./include/vmlinux.h
 
+.PHONY: deps
 deps:
-	sudo apt-get update && \
-	sudo apt-get install -y clang libpcap-dev gcc-multilib build-essential lolcat qemu-kvm wget
+	$(call msg,INSTALL,$@)
+	$(Q)sudo apt-get update && \
+	$(Q)sudo apt-get install -y clang libpcap-dev gcc-multilib build-essential lolcat qemu-kvm wget
 
 # Build libbpf
 $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
@@ -133,7 +135,7 @@ $(OUTPUT)/%.o: $(SRC_DIR)/%.c $(wildcard %.h) | $(OUTPUT)
 
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o  $(LIBBPF_OBJ) $(COMMON_OBJ) deps | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o  $(LIBBPF_OBJ) $(COMMON_OBJ)  | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -lzstd -o $@
 
