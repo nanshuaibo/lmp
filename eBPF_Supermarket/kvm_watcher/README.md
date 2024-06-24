@@ -30,6 +30,12 @@
 >
 > QEMU emulator version 7.2.0
 
+**拉取子仓库：**
+
+```
+git submodule update --init --recursive
+```
+
 **安装依赖：**
 
 ```
