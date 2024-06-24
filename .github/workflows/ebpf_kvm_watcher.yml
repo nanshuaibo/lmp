@@ -28,4 +28,4 @@ jobs:
         continue-on-error: true 
         run: |
           cd eBPF_Supermarket/kvm_watcher/
-          make 
+          make -j$(nproc)
