@@ -87,7 +87,7 @@ $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 
 vmlinux: $(BPFTOOL)
 	$(call msg,GEN-VMLINUX_H,$@)
-	 $(Q)$(BPFTOOL)  btf dump file /sys/kernel/btf/vmlinux format c > ./include/vmlinux.h
+	 $(Q)$(BPFTOOL)  btf dump file /sys/kernel/btf/kvm format c > ./include/vmlinux.h
 
 .PHONY: deps
 deps:
