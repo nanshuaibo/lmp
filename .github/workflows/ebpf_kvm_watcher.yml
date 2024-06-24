@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install dependencies
         run: |
+          git submodule update --init --recursive
           cd eBPF_Supermarket/kvm_watcher/
           make deps 
       - name: Test program execution
