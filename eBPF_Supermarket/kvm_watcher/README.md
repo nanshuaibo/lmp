@@ -40,7 +40,7 @@ make deps
 **编译运行：**
 
 ```
-make bpf
+make -j$(nproc)
 sudo ./kvm_watcher [options]
 make clean
 ```
@@ -133,13 +133,13 @@ Report bugs to <nanshuaibo811@163.com>.
 │   │   ├── kvm_mmu.h
 │   │   └── kvm_vcpu.h
 │   ├── common.h           		  //内核态和用户态公共头文件
-│   └── helpers					        //用户态帮助函数
+│   └── commons					        //用户态帮助函数
 │       ├── trace_helpers.h
 │       └── uprobe_helpers.h
 ├── Makefile                    //编译脚本
 ├── README.md
 ├── src
-│   ├── helpers					        //用户态帮助函数
+│   ├── commons				          //用户态帮助函数
 │   │   ├── trace_helpers.c
 │   │   └── uprobe_helpers.c
 │   ├── kvm_watcher.bpf.c       //内核态bpf程序入口
