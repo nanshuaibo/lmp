@@ -92,8 +92,8 @@ vmlinux: $(BPFTOOL)
 .PHONY: deps
 deps:
 	$(call msg,INSTALL,$@)
-	$(Q)sudo apt-get update && \
-	$(Q)sudo apt-get install -y clang libpcap-dev gcc-multilib build-essential lolcat qemu-kvm wget
+	$(Q) sudo apt-get update && \
+	$(Q) sudo apt-get install -y clang libpcap-dev gcc-multilib build-essential lolcat qemu-kvm wget
 
 # Build libbpf
 $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
