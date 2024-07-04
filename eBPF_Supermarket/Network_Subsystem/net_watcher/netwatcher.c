@@ -44,7 +44,7 @@ static int all_conn = 0, err_packet = 0, extra_conn_info = 0, layer_time = 0,
            http_info = 0, retrans_info = 0, udp_info = 0, net_filter = 0,
            drop_reason = 0, addr_to_func = 0, icmp_info = 0, tcp_info = 0,
            time_load = 0, dns_info = 0, stack_info = 0, mysql_info = 0,
-           redis_info = 0 ,count_info = 0;// flag
+           redis_info = 0, count_info = 0; // flag
 
 static const char *tcp_states[] = {
     [1] = "ESTABLISHED", [2] = "SYN_SENT",   [3] = "SYN_RECV",
@@ -193,8 +193,7 @@ enum MonitorMode get_monitor_mode() {
         return MODE_MYSQL;
     } else if (redis_info) {
         return MODE_REDIS;
-    } 
-    else {
+    } else {
         return MODE_DEFAULT;
     }
 }
@@ -234,7 +233,7 @@ void print_logo() {
 
     pclose(lolcat_pipe);
 }
-static char binary_path[64]="";
+static char binary_path[64] = "";
 #define __ATTACH_UPROBE(skel, sym_name, prog_name, is_retprobe)                \
     do {                                                                       \
         LIBBPF_OPTS(bpf_uprobe_opts, uprobe_opts, .func_name = #sym_name,      \
@@ -564,7 +563,9 @@ static void set_disable_load(struct netwatcher_bpf *skel) {
                               mysql_info ? true : false);
     bpf_program__set_autoload(skel->progs.query__end,
                               mysql_info ? true : false);
-    bpf_program__set_autoload(skel->progs.query__start_redis,
+    bpf_program__set_autoload(skel->progs.query__end_redis,
+                              redis_info ? true : false);
+    bpf_program__set_autoload(skel->progs.query__start_redis_process,
                               redis_info ? true : false);
 }
 
@@ -629,11 +630,11 @@ static void print_header(enum MonitorMode mode) {
         break;
     case MODE_REDIS:
         printf("==============================================================="
-               "====================MYSQL "
+               "====================REDIS "
                "INFORMATION===================================================="
                "============================\n");
-        printf("%-20s %-20s %-20s %-40s %-20s \n", "Pid", "Comm", "Size", "Sql",
-               "duration/μs");
+        printf("%-20s %-20s %-20s %-20s %-20s \n", "Pid", "Comm", "Size",
+               "Redis", "duration/μs");
         break;
     case MODE_DEFAULT:
         printf("==============================================================="
@@ -783,7 +784,7 @@ static int print_conns(struct netwatcher_bpf *skel) {
 
 static int print_packet(void *ctx, void *packet_info, size_t size) {
     if (udp_info || net_filter || drop_reason || icmp_info || tcp_info ||
-        dns_info || mysql_info||redis_info)
+        dns_info || mysql_info || redis_info)
         return 0;
     const struct pack_t *pack_info = packet_info;
     if (pack_info->mac_time > MAXTIME || pack_info->ip_time > MAXTIME ||
@@ -1108,7 +1109,6 @@ static int print_dns(void *ctx, void *packet_info, size_t size) {
            pack_info->rx);
     return 0;
 }
-static mysql_query last_query;
 
 static int print_mysql(void *ctx, void *packet_info, size_t size) {
     if (!mysql_info) {
@@ -1116,23 +1116,29 @@ static int print_mysql(void *ctx, void *packet_info, size_t size) {
     }
 
     const mysql_query *pack_info = packet_info;
-    if (pack_info->duratime == 0) {
-
-        memcpy(&last_query, pack_info, sizeof(mysql_query));
+    printf("%-20d %-20d %-20s %-20u %-41s", pack_info->pid, pack_info->tid,
+           pack_info->comm, pack_info->size, pack_info->msql);
+    // 当 duratime 大于 count_info 时，才打印 duratime
+    if (pack_info->duratime > count_info) {
+        printf("%-21llu", pack_info->duratime);
     } else {
-
-        printf("%-20d %-20d %-20s %-20u %-40s", last_query.pid, last_query.tid,
-               last_query.comm, last_query.size, last_query.msql);
-        // 当 duratime 大于 count_info 时，才打印 duratime
-        if (pack_info->duratime > count_info) {
-            printf("%-21llu", pack_info->duratime);
-        } else {
-            printf("%-21s", "");
-        }
-
-        printf("%-20d\n", pack_info->count);
-        memset(&last_query, 0, sizeof(mysql_query));
+        printf("%-21s", "");
     }
+    printf("%-20d\n", pack_info->count);
+    return 0;
+}
+
+static int print_redis(void *ctx, void *packet_info, size_t size) {
+    const struct redis_query *pack_info = packet_info;
+    int i = 0;
+    char redis[64];
+    for (i = 0; i < pack_info->argc; i++) {
+        strcat(redis, pack_info->redis[i]);
+        strcat(redis, " ");
+    }
+    printf("%-20d %-20s %-20d %-20s %-21llu\n", pack_info->pid, pack_info->comm,
+           pack_info->argc, redis, pack_info->duratime);
+    strcpy(redis, "");
     return 0;
 }
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -1174,7 +1180,7 @@ static int print_trace(void *_ctx, void *data, size_t size) {
 }
 
 int attach_uprobe_mysql(struct netwatcher_bpf *skel) {
-    
+
     ATTACH_UPROBE_CHECKED(
         skel, _Z16dispatch_commandP3THDPK8COM_DATA19enum_server_command,
         query__start);
@@ -1185,8 +1191,11 @@ int attach_uprobe_mysql(struct netwatcher_bpf *skel) {
 }
 int attach_uprobe_redis(struct netwatcher_bpf *skel) {
     ATTACH_UPROBE_CHECKED(
+        skel, call,
+        query__end_redis);
+    ATTACH_UPROBE_CHECKED(
         skel, processCommand,
-        query__start_redis);
+        query__start_redis_process);
     return 0;
 }
 int main(int argc, char **argv) {
@@ -1211,6 +1220,7 @@ int main(int argc, char **argv) {
     struct ring_buffer *dns_rb = NULL;
     struct ring_buffer *trace_rb = NULL;
     struct ring_buffer *mysql_rb = NULL;
+    struct ring_buffer *redis_rb = NULL;
     struct netwatcher_bpf *skel;
     int err;
     /* Parse command line arguments */
@@ -1246,16 +1256,14 @@ int main(int argc, char **argv) {
 
     /* Attach tracepoint handler */
     if (mysql_info) {
-        strcpy(binary_path, "/usr/sbin/mysqld");    
+        strcpy(binary_path, "/usr/sbin/mysqld");
         err = attach_uprobe_mysql(skel);
         if (err) {
             fprintf(stderr, "failed to attach uprobes\n");
 
             goto cleanup;
         }
-    } 
-    else if(redis_info)
-    {
+    } else if (redis_info) {
         strcpy(binary_path, "/usr/bin/redis-server");
         err = attach_uprobe_redis(skel);
         if (err) {
@@ -1263,8 +1271,7 @@ int main(int argc, char **argv) {
 
             goto cleanup;
         }
-    }
-    else {
+    } else {
         err = netwatcher_bpf__attach(skel);
         if (err) {
             fprintf(stderr, "Failed to attach BPF skeleton\n");
@@ -1273,7 +1280,7 @@ int main(int argc, char **argv) {
     }
     enum MonitorMode mode = get_monitor_mode();
 
-    //print_logo();
+    // print_logo();
 
     print_header(mode);
 
@@ -1333,6 +1340,13 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to create ring buffer(trace)\n");
         goto cleanup;
     }
+    redis_rb = ring_buffer__new(bpf_map__fd(skel->maps.redis_rb), print_redis,
+                                NULL, NULL);
+    if (!redis_rb) {
+        err = -1;
+        fprintf(stderr, "Failed to create ring buffer(trace)\n");
+        goto cleanup;
+    }
     /* Set up ring buffer polling */
     rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), print_packet, NULL, NULL);
     if (!rb) {
@@ -1354,6 +1368,7 @@ int main(int argc, char **argv) {
         err = ring_buffer__poll(dns_rb, 100 /* timeout, ms */);
         err = ring_buffer__poll(trace_rb, 100 /* timeout, ms */);
         err = ring_buffer__poll(mysql_rb, 100 /* timeout, ms */);
+        err = ring_buffer__poll(redis_rb, 100 /* timeout, ms */);
         print_conns(skel);
         sleep(1);
         /* Ctrl-C will cause -EINTR */

@@ -335,6 +335,10 @@ int BPF_KPROBE(query__end){
 }
 
 SEC("uprobe/processCommand")
-int BPF_KPROBE(query__start_redis) { 
+int BPF_KPROBE(query__start_redis_process) { 
     return __handle_redis_start(ctx); 
+}
+SEC("uretprobe/call")
+int BPF_KPROBE(query__end_redis){
+    return __handle_redis_end(ctx); 
 }
